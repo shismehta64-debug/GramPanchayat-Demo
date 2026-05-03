@@ -110,7 +110,7 @@ export default function DocumentsPage() {
               📁 Local Folder Structure
             </h3>
             <div style={{ fontSize: "0.8rem", color: "#9ca3af", marginBottom: "10px" }}>
-              Documents are stored securely on the server's local disk.
+              Documents are stored securely on the server&apos;s local disk.
             </div>
             <div style={{ fontFamily: "monospace", fontSize: "0.8rem", color: "#9ca3af", lineHeight: "1.8" }}>
               <div>📁 backend/storage/documents/</div>
