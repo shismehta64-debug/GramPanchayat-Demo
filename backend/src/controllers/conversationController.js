@@ -139,7 +139,9 @@ async function savePDFForDelivery(pdfBuffer, docName) {
     console.error('[PDF] Supabase Storage upload failed:', err.message);
     // Fallback to local temp file with PUBLIC_URL
     const publicUrl = process.env.PUBLIC_URL;
-    const tmpDir    = path.join(__dirname, '../../storage/temp-media');
+    const os = require('os');
+    const tmpDir = process.env.VERCEL ? os.tmpdir() : path.join(__dirname, '../../storage/temp-media');
+    
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
     const localFile = path.join(tmpDir, `${Date.now()}_${safeName}.pdf`);
     fs.writeFileSync(localFile, pdfBuffer);

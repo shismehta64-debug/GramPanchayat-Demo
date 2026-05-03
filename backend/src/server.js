@@ -57,8 +57,9 @@ app.use('/api/analytics',    analyticsRouter);
 app.use('/api/documents',    documentsRouter);
 
 // ─── Static Media Serving (for Twilio PDF delivery via Ngrok) ─────────────────
-const MEDIA_DIR = path.join(__dirname, '../storage/temp-media');
-if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
+const os = require('os');
+const MEDIA_DIR = process.env.VERCEL ? os.tmpdir() : path.join(__dirname, '../storage/temp-media');
+if (!process.env.VERCEL && !fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
 app.use('/media', express.static(MEDIA_DIR));
 console.log(`[Media] Serving temp PDFs from: ${MEDIA_DIR}`);
 console.log(`[Media] Public URL: ${process.env.PUBLIC_URL || 'NOT SET — add PUBLIC_URL to .env'}/media/`);
@@ -88,19 +89,34 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// ─── Scheduled Jobs ───────────────────────────────────────────────────────────
-// Clean expired sessions every 5 minutes
-cron.schedule('*/5 * * * *', () => {
-  cleanExpiredSessions().catch(err => console.error('[Cron] Session cleanup error:', err.message));
+// ─── Scheduled Jobs / Cron ────────────────────────────────────────────────────
+// In a long-running server (like local or Railway), use node-cron
+if (!process.env.VERCEL) {
+  cron.schedule('*/5 * * * *', () => {
+    cleanExpiredSessions().catch(err => console.error('[Cron] Session cleanup error:', err.message));
+  });
+}
+
+// In a serverless environment (Vercel), expose an endpoint for Vercel Cron
+app.get('/api/cron/cleanup', async (req, res) => {
+  try {
+    await cleanExpiredSessions();
+    res.json({ success: true, message: 'Sessions cleaned' });
+  } catch (err) {
+    console.error('[Vercel Cron] Cleanup error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🏛  Gram Panchayat WhatsApp Bot Backend`);
-  console.log(`📡  Server running on http://localhost:${PORT}`);
-  console.log(`🔗  Webhook: http://localhost:${PORT}/webhook/whatsapp`);
-  console.log(`🛠️  Admin API: http://localhost:${PORT}/api`);
-  console.log(`🌱  Environment: ${process.env.NODE_ENV || 'development'}\n`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`\n🏛  Gram Panchayat WhatsApp Bot Backend`);
+    console.log(`📡  Server running on http://localhost:${PORT}`);
+    console.log(`🔗  Webhook: http://localhost:${PORT}/webhook/whatsapp`);
+    console.log(`🛠️  Admin API: http://localhost:${PORT}/api`);
+    console.log(`🌱  Environment: ${process.env.NODE_ENV || 'development'}\n`);
+  });
+}
 
 module.exports = app;
