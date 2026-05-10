@@ -97,6 +97,21 @@ async function getPanchayatConfig() {
   return configCache || {};
 }
 
+// ─── Block reminder cooldown (in-memory) ──────────────────────────────────────
+// Prevents sending a blocked message on EVERY incoming message from a blocked user.
+// We only remind them once every 10 minutes.
+const blockReminderSent = new Map(); // whatsappNumber -> timestamp
+const BLOCK_REMINDER_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+
+function shouldSendBlockReminder(from) {
+  const last = blockReminderSent.get(from);
+  if (!last || Date.now() - last > BLOCK_REMINDER_COOLDOWN_MS) {
+    blockReminderSent.set(from, Date.now());
+    return true;
+  }
+  return false;
+}
+
 // ─── Format DOB as DDMMYYYY ───────────────────────────────────────────────────
 function dobToPassword(dob) {
   const d = new Date(dob);
@@ -165,20 +180,33 @@ async function handleMessage(from, body, msgSid) {
   // ── Check if blocked ──────────────────────────────────────────────────────
   const blockStatus = await isBlocked(from);
   if (blockStatus.blocked) {
-    await sendMessage(from, MSG.blocked(blockStatus.blockedUntil));
+    // Only remind blocked users once per 10 minutes to avoid burning Twilio credits
+    if (shouldSendBlockReminder(from)) {
+      await sendMessage(from, MSG.blocked(blockStatus.blockedUntil));
+    }
     return;
   }
 
   // ── Get or create session ─────────────────────────────────────────────────
   let session = await getSession(from);
 
-  // Restart keywords
-  const isRestart = /^(hi|hello|start|restart|नमस्ते|हैलो)$/i.test(input);
-  if (isRestart || !session) {
+  // Restart keywords — only restart if user explicitly greets AND has no active session,
+  // OR if they explicitly say 'restart'. This prevents a fresh Welcome message being
+  // sent every time Render restarts the server and loses the in-memory session.
+  const isExplicitRestart = /^(restart)$/i.test(input);
+  const isGreeting        = /^(hi|hello|start|नमस्ते|हैलो)$/i.test(input);
+
+  if (isExplicitRestart || (isGreeting && !session)) {
     if (session) await deleteSession(from);
     session = await createSession(from);
     const welcomeMsg = config.welcome_message || MSG.welcome(config.panchayat_name);
     await sendMessage(from, welcomeMsg);
+    return;
+  }
+
+  // If no session and not a greeting, prompt them to start instead of silently failing
+  if (!session) {
+    await sendMessage(from, MSG.sessionExpired());
     return;
   }
 
